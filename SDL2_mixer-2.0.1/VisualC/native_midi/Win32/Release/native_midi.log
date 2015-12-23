@@ -1,0 +1,23 @@
+﻿Build started 2016/3/25 9:47:15.
+     1>Project "C:\ddksample\apps-src\SDL\SDL2_mixer-2.0.1\VisualC\native_midi\native_midi.vcxproj" on node 2 (rebuild target(s)).
+     1>_PrepareForClean:
+         Deleting file "Win32\Release\native_midi.lastbuildstate".
+       InitializeBuildStatus:
+         Creating "Win32\Release\native_midi.unsuccessfulbuild" because "AlwaysCreate" was specified.
+       ClCompile:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\CL.exe /c /I..\..\..\..\linker\include\SDL2 /I..\.. /I..\..\native_midi /Zi /nologo /W3 /WX- /O2 /Oy- /D WIN32 /D NDEBUG /D _WINDOWS /D _VC80_UPGRADE=0x0600 /Gm- /EHsc /MT /GS /arch:SSE /fp:precise /Zc:wchar_t /Zc:forScope /Fo"Win32\Release\\" /Fd"Win32\Release\vc100.pdb" /Gd /TC /analyze- /errorReport:prompt ..\..\native_midi\native_midi_common.c ..\..\native_midi\native_midi_win32.c
+         native_midi_common.c
+         native_midi_win32.c
+         Generating Code...
+       Lib:
+         C:\Program Files (x86)\Microsoft Visual Studio 10.0\VC\bin\Lib.exe /OUT:"C:\ddksample\apps-src\SDL\SDL2_mixer-2.0.1\VisualC\\Win32\Release\native_midi.lib" /NOLOGO Win32\Release\native_midi_common.obj
+         Win32\Release\native_midi_win32.obj
+         native_midi.vcxproj -> C:\ddksample\apps-src\SDL\SDL2_mixer-2.0.1\VisualC\\Win32\Release\native_midi.lib
+       FinalizeBuildStatus:
+         Deleting file "Win32\Release\native_midi.unsuccessfulbuild".
+         Touching "Win32\Release\native_midi.lastbuildstate".
+     1>Done Building Project "C:\ddksample\apps-src\SDL\SDL2_mixer-2.0.1\VisualC\native_midi\native_midi.vcxproj" (rebuild target(s)).
+
+Build succeeded.
+
+Time Elapsed 00:00:00.80
