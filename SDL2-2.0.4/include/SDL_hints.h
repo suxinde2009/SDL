@@ -630,6 +630,9 @@ extern "C" {
  */
 #define SDL_HINT_WINDOWS_NO_CLOSE_ON_ALT_F4	"SDL_WINDOWS_NO_CLOSE_ON_ALT_F4"
 
+#define SDL_HINT_BACKGROUND_AUDIO "SDL_BACKGROUND_AUDIO"
+#define SDL_HINT_BLE "SDL_BLE"
+
 /**
  *  \brief  An enumeration of hint priorities
  */

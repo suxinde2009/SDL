@@ -76,6 +76,7 @@ typedef struct SDL_AudioDriverImpl
     int (*GetPendingBytes) (_THIS);
     Uint8 *(*GetDeviceBuf) (_THIS);
     void (*WaitDone) (_THIS);
+	void (*XmitData) (_THIS, int start);
     void (*CloseDevice) (_THIS);
     void (*LockDevice) (_THIS);
     void (*UnlockDevice) (_THIS);
@@ -162,6 +163,7 @@ struct SDL_AudioDevice
     int enabled;  /* true if device is functioning and connected. */
     int shutdown; /* true if we are signaling the play thread to end. */
     int paused;
+	SDL_bool xmited;
     int opened;
 
     /* Fake audio buffer for when the audio hardware is busy */

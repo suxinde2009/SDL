@@ -1,4 +1,4 @@
-LOCAL_PATH := $(call my-dir)
+LOCAL_PATH := $(call my-dir)/../..
 
 ###########################
 #
@@ -44,6 +44,10 @@ LOCAL_SRC_FILES := \
 	$(wildcard $(LOCAL_PATH)/src/timer/unix/*.c) \
 	$(wildcard $(LOCAL_PATH)/src/video/*.c) \
 	$(wildcard $(LOCAL_PATH)/src/video/android/*.c) \
+	$(wildcard $(LOCAL_PATH)/src/peripheral/*.c) \
+	$(wildcard $(LOCAL_PATH)/src/peripheral/android/*.c) \
+	$(wildcard $(LOCAL_PATH)/src/third/*.c) \
+	$(wildcard $(LOCAL_PATH)/src/third/android/*.c) \
 	$(wildcard $(LOCAL_PATH)/src/test/*.c))
 
 LOCAL_CFLAGS += -DGL_GLEXT_PROTOTYPES

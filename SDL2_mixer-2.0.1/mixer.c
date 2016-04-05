@@ -301,6 +301,19 @@ static void *Mix_DoEffects(int chan, void *snd, int len)
     return(buf);
 }
 
+static int persist_xmit_audio = 0;
+void Mix_EnablePersistXmit(int enable)
+{
+	persist_xmit_audio = enable;
+	if (persist_xmit_audio) {
+		SDL_XmitAudio(SDL_TRUE);
+	}
+}
+
+int Mix_GetPersistXmit()
+{
+	return persist_xmit_audio;
+}
 
 /* Mixing function */
 static void mix_channels(void *udata, Uint8 *stream, int len)
@@ -308,11 +321,11 @@ static void mix_channels(void *udata, Uint8 *stream, int len)
     Uint8 *mix_input;
     int i, mixable, volume = SDL_MIX_MAXVOLUME;
     Uint32 sdl_ticks;
+	SDL_bool require_xmit = Mix_PlayingMusic()? SDL_TRUE: SDL_FALSE;
+	static int suspend_audio_ticks = -1;
 
-#if SDL_VERSION_ATLEAST(1, 3, 0)
     /* Need to initialize the stream in SDL 1.3+ */
     SDL_memset(stream, mixer.silence, len);
-#endif
 
     /* Mix the music (must be done before the channels are added) */
     if ( music_active || (mix_music != music_mixer) ) {
@@ -322,6 +335,9 @@ static void mix_channels(void *udata, Uint8 *stream, int len)
     /* Mix any playing channels... */
     sdl_ticks = SDL_GetTicks();
     for ( i=0; i<num_channels; ++i ) {
+		if ((mix_channel[i].playing > 0) || mix_channel[i].looping) {
+           require_xmit = SDL_TRUE;
+        }
         if ( !mix_channel[i].paused ) {
             if ( mix_channel[i].expire > 0 && mix_channel[i].expire < sdl_ticks ) {
                 /* Expiration delay for that channel is reached */
@@ -414,6 +430,23 @@ static void mix_channels(void *udata, Uint8 *stream, int len)
     if ( mix_postmix ) {
         mix_postmix(mix_postmix_data, stream, len);
     }
+
+	// to save power, if no data to device persist idle_threshold, disable xmit data.
+	if (!require_xmit && !persist_xmit_audio) {
+		if (suspend_audio_ticks != -1) {
+			const int idle_threshold = 30000;
+			if (SDL_GetTicks() - suspend_audio_ticks >= idle_threshold) {
+				SDL_XmitAudio(SDL_FALSE);
+				// some device don't support impl.XmitData. don't call too frequency.
+				suspend_audio_ticks = -1;
+			}
+
+		} else {
+			suspend_audio_ticks = SDL_GetTicks();
+		}
+	} else {
+		suspend_audio_ticks = -1;
+	}
 }
 
 #if 0
@@ -892,6 +925,7 @@ int Mix_PlayChannelTimed(int which, Mix_Chunk *chunk, int loops, int ticks)
     /* Lock the mixer while modifying the playing channels */
     SDL_LockAudio();
     {
+		SDL_XmitAudio(SDL_TRUE);
         /* If which is -1, play on the first free channel */
         if ( which == -1 ) {
             for ( i=reserved_channels; i<num_channels; ++i ) {
@@ -963,6 +997,7 @@ int Mix_FadeInChannelTimed(int which, Mix_Chunk *chunk, int loops, int ms, int t
     /* Lock the mixer while modifying the playing channels */
     SDL_LockAudio();
     {
+		SDL_XmitAudio(SDL_TRUE);
         /* If which is -1, play on the first free channel */
         if ( which == -1 ) {
             for ( i=reserved_channels; i<num_channels; ++i ) {

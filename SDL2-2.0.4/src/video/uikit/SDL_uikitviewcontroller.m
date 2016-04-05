@@ -110,6 +110,7 @@ SDL_bool UIBackgroundModes_audio()
         } else {
             ret = 0;
         }
+		SDL_SetHint(SDL_HINT_BACKGROUND_AUDIO, ret? "1": "0");
     }
     return ret? SDL_TRUE: SDL_FALSE;
 }
@@ -763,8 +764,6 @@ UIKit_SetTextInputRect(_THIS, SDL_Rect *rect)
 
 #endif /* SDL_IPHONE_KEYBOARD */
 
-extern void UIKit_PlaybackAudio(SDL_bool play);
-
 int UIKit_MicrophonePermission()
 {
     __block int ret = 0;
@@ -794,7 +793,7 @@ void UIKit_StartRecordAudio(SDL_Window* window, const char* file)
 	
 	NSError* error1;
 	if (mixable_audio) {
-        // UIKit_PlaybackAudio(SDL_FALSE);
+        // SDL_XmitAudio(0);
 		[audioSession setCategory:AVAudioSessionCategoryPlayAndRecord withOptions: AVAudioSessionCategoryOptionMixWithOthers error: &error1];
 	} else {
 		[audioSession setCategory:AVAudioSessionCategoryRecord error: &error1];
@@ -815,7 +814,7 @@ void UIKit_StartRecordAudio(SDL_Window* window, const char* file)
         [vc.audioRecorder record];
     }
     if (mixable_audio) {
-        UIKit_PlaybackAudio(SDL_FALSE);
+        SDL_XmitAudio(0);
     }
 	NSLog(@"record begin...");
 }

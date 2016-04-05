@@ -78,8 +78,9 @@ SDL_bool SDL_IsFile(const char* file)
 		struct stat st;
 		return stat(file, &st) != -1? SDL_TRUE: SDL_FALSE;
 	}
+
 	// Try from the asset system
-	return SDL_FALSE;
+	return Android_JNI_IsFile(file);
 }
 
 #endif /* SDL_FILESYSTEM_ANDROID */

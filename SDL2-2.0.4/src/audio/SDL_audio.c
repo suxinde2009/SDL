@@ -1292,6 +1292,22 @@ SDL_PauseAudio(int pause_on)
     SDL_PauseAudioDevice(1, pause_on);
 }
 
+void
+SDL_XmitAudio(SDL_bool start)
+{
+	SDL_AudioDevice *device = get_audio_device(1);
+	if (device) {
+		if (start == device->xmited) {
+			return;
+		}
+		current_audio.impl.LockDevice(device);
+		if (current_audio.impl.XmitData) {
+			current_audio.impl.XmitData(device, start);
+		}
+		device->xmited = start;
+        current_audio.impl.UnlockDevice(device);
+    }
+}
 
 void
 SDL_LockAudioDevice(SDL_AudioDeviceID devid)

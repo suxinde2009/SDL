@@ -1647,7 +1647,6 @@ extern void UIKit_EnableBatteryMonitoring(SDL_bool enable);
 extern int UIKit_GetBatteryLevel();
 extern const char* UIKit_ApnsGetToken();
 extern void UIKit_MixableAudio(SDL_bool mixable);
-extern void UIKit_PlaybackAudio(SDL_bool play);
 #endif
 
 void*
@@ -1699,11 +1698,6 @@ SDL_SetWindowData(SDL_Window * window, const char *name, void *userdata)
 			SDL_bool mixable = (int)userdata? SDL_TRUE: SDL_FALSE;
 #if defined(__IPHONEOS__) && __IPHONEOS__
 			UIKit_MixableAudio(mixable);
-#endif
-		} else if (len == 14 && !SDL_memcmp(name, "playback_audio", len)) {
-			SDL_bool play = (int)userdata? SDL_TRUE: SDL_FALSE;
-#if defined(__IPHONEOS__) && __IPHONEOS__
-			UIKit_PlaybackAudio(play);
 #endif
 		} else if (len >= 6 && !SDL_memcmp(name, "apns_", 5)) {
 			if (!SDL_memcmp(name + 5, "token", 5)) {

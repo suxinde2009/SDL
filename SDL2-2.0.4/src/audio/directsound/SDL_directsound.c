@@ -320,6 +320,12 @@ DSOUND_WaitDone(_THIS)
 }
 
 static void
+DSOUND_XmitData(_THIS, int start)
+{
+	int ii = 0;
+}
+
+static void
 DSOUND_CloseDevice(_THIS)
 {
     if (this->hidden != NULL) {
@@ -500,6 +506,7 @@ DSOUND_Init(SDL_AudioDriverImpl * impl)
     impl->WaitDevice = DSOUND_WaitDevice;
     impl->WaitDone = DSOUND_WaitDone;
     impl->GetDeviceBuf = DSOUND_GetDeviceBuf;
+	impl->XmitData = DSOUND_XmitData;
     impl->CloseDevice = DSOUND_CloseDevice;
     impl->FreeDeviceHandle = DSOUND_FreeDeviceHandle;
 

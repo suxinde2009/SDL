@@ -113,6 +113,7 @@ extern DECLSPEC void SDL_BleWriteCharacteristic(SDL_BlePeripheral* peripheral, S
 extern DECLSPEC void SDL_BleSetNotify(SDL_BlePeripheral* peripheral, SDL_BleCharacteristic* characteristic);
 extern DECLSPEC void SDL_BleDiscoverDescriptors(SDL_BlePeripheral* peripheral, SDL_BleCharacteristic* characteristic);
 extern DECLSPEC int SDL_BleAuthorizationStatus();
+extern DECLSPEC SDL_bool SDL_BleUuidEqual(const char* uuid1, const char* uuid2);
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

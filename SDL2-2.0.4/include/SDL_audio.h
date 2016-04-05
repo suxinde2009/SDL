@@ -392,6 +392,8 @@ extern DECLSPEC void SDLCALL SDL_PauseAudioDevice(SDL_AudioDeviceID dev,
                                                   int pause_on);
 /* @} *//* Pause audio functions */
 
+extern DECLSPEC void SDLCALL SDL_XmitAudio(SDL_bool start);
+
 /**
  *  This function loads a WAVE from the data source, automatically freeing
  *  that source if \c freesrc is non-zero.  For example, to load a WAVE file,

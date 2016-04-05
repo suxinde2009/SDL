@@ -906,6 +906,9 @@ static int music_internal_play(Mix_Music *music, double position)
     if ( music_playing ) {
         music_internal_halt();
     }
+
+	SDL_XmitAudio(SDL_TRUE);
+
     music_playing = music;
 	music_playing->played = 0;
 
@@ -1602,11 +1605,6 @@ int Mix_EachSoundFont(int (*function)(const char*, void*), void *data)
     char *context, *path, *paths;
     const char* cpaths = Mix_GetSoundFonts();
 
-	if (!function) {
-		Mix_HookMusicPlaying(data);
-		return 0;
-	}
-
     if (!cpaths) {
         Mix_SetError("No SoundFonts have been requested");
         return 0;
@@ -1632,16 +1630,6 @@ int Mix_EachSoundFont(int (*function)(const char*, void*), void *data)
 
     SDL_free(paths);
     return 1;
-}
-
-#else
-
-int Mix_EachSoundFont(int (*function)(const char*, void*), void *data)
-{
-	if (!function) {
-		Mix_HookMusicPlaying(data);
-		return 0;
-	}
 }
 
 #endif

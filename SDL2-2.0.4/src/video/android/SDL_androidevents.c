@@ -29,6 +29,7 @@
 #include "SDL_events.h"
 #include "SDL_androidwindow.h"
 
+extern void android_handle_bledid(SDL_bool foreground);
 
 void android_egl_context_backup();
 void android_egl_context_restore();
@@ -73,6 +74,7 @@ Android_PumpEvents(_THIS)
     static int isPausing = 0;
 #endif
     /* No polling necessary */
+    android_handle_bledid(SDL_TRUE);
 
     /*
      * Android_ResumeSem and Android_PauseSem are signaled from Java_org_libsdl_app_SDLActivity_nativePause and Java_org_libsdl_app_SDLActivity_nativeResume

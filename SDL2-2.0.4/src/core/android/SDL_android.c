@@ -59,7 +59,7 @@ static void Android_JNI_ThreadDestroyed(void*);
 #include <jni.h>
 #include <android/log.h>
 
-
+#define posix_print(format, ...) __android_log_print(ANDROID_LOG_INFO, "SDL", format, ##__VA_ARGS__)
 /*******************************************************************************
                                Globals
 *******************************************************************************/
@@ -74,8 +74,14 @@ static jmethodID midGetNativeSurface;
 static jmethodID midAudioInit;
 static jmethodID midAudioWriteShortBuffer;
 static jmethodID midAudioWriteByteBuffer;
+static jmethodID midAudioXmit;
 static jmethodID midAudioQuit;
 static jmethodID midPollInputDevices;
+static jmethodID midGetAssetType;
+
+static jmethodID midBleScanPeripherals;
+static jmethodID midBleStopScanPeripherals;
+static jmethodID midBleInitialize;
 
 /* Accelerometer data storage */
 static float fLastAccelerometer[3];
@@ -120,19 +126,28 @@ JNIEXPORT void JNICALL SDL_Android_Init(JNIEnv* mEnv, jclass cls)
                                 "getNativeSurface","()Landroid/view/Surface;");
     midAudioInit = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
                                 "audioInit", "(IZZI)I");
-    midAudioWriteShortBuffer = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
-                                "audioWriteShortBuffer", "([S)V");
-    midAudioWriteByteBuffer = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
-                                "audioWriteByteBuffer", "([B)V");
+	midAudioXmit = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+                                "audioXmit", "(Z)V");
     midAudioQuit = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
                                 "audioQuit", "()V");
     midPollInputDevices = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
                                 "pollInputDevices", "()V");
 
+	midGetAssetType = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+                                "get_asset_type", "(Landroid/content/Context;Ljava/lang/String;Z)I");
+
+	midBleScanPeripherals = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+                                "bleScanPeripherals", "(Landroid/content/Context;Ljava/lang/String;)V");
+	midBleStopScanPeripherals = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+                                "bleStopScanPeripherals", "(Landroid/content/Context;)V");
+
+	midBleInitialize = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+                                "bleInitialize", "(Landroid/content/Context;)Landroid/bluetooth/BluetoothAdapter;");
+
+
     bHasNewData = SDL_FALSE;
 
-    if (!midGetNativeSurface || !midAudioInit ||
-       !midAudioWriteShortBuffer || !midAudioWriteByteBuffer || !midAudioQuit || !midPollInputDevices) {
+    if (!midGetNativeSurface || !midAudioInit || !midAudioXmit || !midAudioQuit || !midPollInputDevices) {
         __android_log_print(ANDROID_LOG_WARN, "SDL", "SDL: Couldn't locate Java callbacks, check that they're named and typed correctly");
     }
     __android_log_print(ANDROID_LOG_INFO, "SDL", "SDL_Android_Init() finished!");
@@ -338,11 +353,13 @@ JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativeQuit(
     if (!SDL_SemValue(Android_ResumeSem)) SDL_SemPost(Android_ResumeSem);
 }
 
+int didbackground = 0;
+
 /* Pause */
 JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativePause(
                                     JNIEnv* env, jclass cls)
 {
-    __android_log_print(ANDROID_LOG_VERBOSE, "SDL", "nativePause()");
+    __android_log_print(ANDROID_LOG_INFO, "SDL", "nativePause()");
     if (Android_Window) {
         SDL_SendWindowEvent(Android_Window, SDL_WINDOWEVENT_FOCUS_LOST, 0, 0);
         SDL_SendWindowEvent(Android_Window, SDL_WINDOWEVENT_MINIMIZED, 0, 0);
@@ -352,6 +369,7 @@ JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativePause(
         /* *After* sending the relevant events, signal the pause semaphore 
          * so the event loop knows to pause and (optionally) block itself */
         if (!SDL_SemValue(Android_PauseSem)) SDL_SemPost(Android_PauseSem);
+		didbackground = 1;
     }
 }
 
@@ -359,7 +377,7 @@ JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativePause(
 JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativeResume(
                                     JNIEnv* env, jclass cls)
 {
-    __android_log_print(ANDROID_LOG_VERBOSE, "SDL", "nativeResume()");
+    __android_log_print(ANDROID_LOG_INFO, "SDL", "nativeResume()");
 
     if (Android_Window) {
         SDL_SendAppEvent(SDL_APP_WILLENTERFOREGROUND);
@@ -371,6 +389,7 @@ JNIEXPORT void JNICALL Java_org_libsdl_app_SDLActivity_nativeResume(
          * and this function will be called from the Java thread instead.
          */
         if (!SDL_SemValue(Android_ResumeSem)) SDL_SemPost(Android_ResumeSem);
+		didbackground = 0;
     }
 }
 
@@ -568,7 +587,7 @@ int Android_JNI_OpenAudioDevice(int sampleRate, int is16Bit, int channelCount, i
     }
     Android_JNI_SetupThread();
 
-    __android_log_print(ANDROID_LOG_VERBOSE, "SDL", "SDL audio: opening device");
+    __android_log_print(ANDROID_LOG_INFO, "SDL", "SDL audio: opening device");
     audioBuffer16Bit = is16Bit;
     audioBufferStereo = channelCount > 1;
 
@@ -634,6 +653,20 @@ void Android_JNI_WriteAudioBuffer(void)
     }
 
     /* JNI_COMMIT means the changes are committed to the VM but the buffer remains pinned */
+}
+
+void Android_XmitAudio(jboolean start)
+{
+	struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
+	jmethodID mid;
+	JNIEnv* mEnv;
+
+	mEnv = Android_JNI_GetEnv();
+	LocalReferenceHolder_Init(&refs, mEnv);
+
+	(*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, midAudioXmit, start);
+
+    LocalReferenceHolder_Cleanup(&refs);
 }
 
 void Android_JNI_CloseAudioDevice(void)
@@ -1618,79 +1651,137 @@ jclass Android_JNI_GetActivityClass(void)
     return mActivityClass;
 }
 
-#define posix_print(format, ...) __android_log_print(ANDROID_LOG_INFO, "SDL", format, ##__VA_ARGS__)
-
-SDL_bool Android_JNI_IsDirectory(const char* dir)
+typedef enum
 {
+	asset_type_none = 0,
+    asset_type_directory,
+    asset_type_file,
+} asset_type;
+
+static int Android_JNI_AssetType(const char* dir, jboolean directory)
+{
+	// notice: AssetManager.list is very consumption of cpu!
+	// for example, PE-TL10(Android4.4.2) requires 60 msecond almostly.
 	struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
 	jmethodID mid;
 	jobject context;
 	jobject assetManager;
-	jobject files;
 	jstring jstr;
-	jboolean ok;
 	JNIEnv* mEnv;
-	char* dir2;
+	int type;
 
-	posix_print("Android_JNI_IsDirectory, dir: %s\n", dir);
-
-	const char* spot = SDL_strrchr(dir, '/');
-    if (!spot) {
-		posix_print("Android_JNI_IsDirectory, dir hans't /\n");
-		return SDL_FALSE;
+	if (!SDL_strchr(dir, '/')) {
+		return asset_type_none;
 	}
 
 	mEnv = Android_JNI_GetEnv();
 	if (!LocalReferenceHolder_Init(&refs, mEnv)) {
 		LocalReferenceHolder_Cleanup(&refs);
-
-		posix_print("Android_JNI_IsDirectory, LocalReferenceHolder failed\n");
-		return SDL_FALSE;
+		return asset_type_none;
 	}
 
-	posix_print("Android_JNI_IsDirectory, 1\n");
-
-    /* context = SDLActivity.getContext(); */
+    // context = SDLActivity.getContext(); 
     mid = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
             "getContext","()Landroid/content/Context;");
     context = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, mid);
 
-	posix_print("Android_JNI_IsDirectory, 2\n");
+	jstr = (jstring)((*mEnv)->NewStringUTF(mEnv, dir));
+    type = (*mEnv)->CallStaticIntMethod(mEnv, mActivityClass, midGetAssetType, context, jstr, directory);
 
-    /* assetManager = context.getAssets(); */
-	mid = (*mEnv)->GetMethodID(mEnv, (*mEnv)->GetObjectClass(mEnv, context),
-        "getAssets", "()Landroid/content/res/AssetManager;");
-	assetManager = (*mEnv)->CallObjectMethod(mEnv, context, mid);
 
-	dir2 = SDL_strdup(dir);
-	dir2[spot - dir] = '\0';
-
-	posix_print("Android_JNI_IsDirectory, 3\n");
-
-	/* String files[] = assetManager.list(dir); */
-	mid = (*mEnv)->GetMethodID(mEnv, (*mEnv)->GetObjectClass(mEnv, assetManager),
-        "list", "()[Ljava/lang/String;");
-	jstr = (jstring)((*mEnv)->NewStringUTF(mEnv, dir2));
-	files = (*mEnv)->CallObjectMethod(mEnv, context, mid, jstr);
 	(*mEnv)->DeleteLocalRef(mEnv, jstr);
+    LocalReferenceHolder_Cleanup(&refs);
 
-	posix_print("Android_JNI_IsDirectory, 4\n");
+	return type;
+}
 
-	// dir2[spot - dir] = '/';
-    /* ok = files.contains(id); */
-    mid = (*mEnv)->GetMethodID(mEnv, (*mEnv)->GetObjectClass(mEnv, files),
-            "contains", "(Ljava/lang/String;)Z;");
-    jstr = (jstring)((*mEnv)->NewStringUTF(mEnv, spot));
-    ok = (*mEnv)->CallBooleanMethod(mEnv, files, mid, jstr);
-    (*mEnv)->DeleteLocalRef(mEnv, jstr);
+SDL_bool Android_JNI_IsDirectory(const char* dir)
+{
+	int type = Android_JNI_AssetType(dir, JNI_TRUE);
+	return type == asset_type_directory? SDL_TRUE: SDL_FALSE;
+}
 
-	posix_print("Android_JNI_IsDirectory, 5\n");
+SDL_bool Android_JNI_IsFile(const char* file)
+{
+	int type = Android_JNI_AssetType(file, JNI_FALSE);
+	return type == asset_type_file? SDL_TRUE: SDL_FALSE;
+}
+
+// ble behaver
+void Android_JNI_BleScanPeripherals(const char* uuid)
+{
+	struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
+	jmethodID mid;
+	jobject context;
+	jobject assetManager;
+	jstring jstr;
+	JNIEnv* mEnv;
+	
+	mEnv = Android_JNI_GetEnv();
+	if (!LocalReferenceHolder_Init(&refs, mEnv)) {
+		LocalReferenceHolder_Cleanup(&refs);
+		return;
+	}
+
+    // context = SDLActivity.getContext(); 
+    mid = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+            "getContext","()Landroid/content/Context;");
+    context = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, mid);
+
+	jstr = (jstring)((*mEnv)->NewStringUTF(mEnv, uuid));
+    (*mEnv)->CallStaticVoidMethod(mEnv, mActivityClass, midBleScanPeripherals, context, jstr);
+
+	(*mEnv)->DeleteLocalRef(mEnv, jstr);
+    LocalReferenceHolder_Cleanup(&refs);
+}
+
+void Android_JNI_BleStopScanPeripherals()
+{
+	struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
+	jmethodID mid;
+	jobject context;
+	jobject assetManager;
+	JNIEnv* mEnv;
+
+	mEnv = Android_JNI_GetEnv();
+	if (!LocalReferenceHolder_Init(&refs, mEnv)) {
+		LocalReferenceHolder_Cleanup(&refs);
+		return;
+	}
+
+    // context = SDLActivity.getContext(); 
+    mid = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+            "getContext","()Landroid/content/Context;");
+    context = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, mid);
+
+    (*mEnv)->CallStaticVoidMethod(mEnv, mActivityClass, midBleStopScanPeripherals, context);
 
     LocalReferenceHolder_Cleanup(&refs);
-	SDL_free(dir2);
+}
 
-	posix_print("Android_JNI_IsDirectory, will return %s\n", ok? "true": "false");
-	return ok? SDL_TRUE: SDL_FALSE;
+jobject Android_JNI_BleInitialize()
+{
+	struct LocalReferenceHolder refs = LocalReferenceHolder_Setup(__FUNCTION__);
+	jmethodID mid;
+	jobject context;
+	JNIEnv* mEnv;
+
+	mEnv = Android_JNI_GetEnv();
+	if (!LocalReferenceHolder_Init(&refs, mEnv)) {
+		LocalReferenceHolder_Cleanup(&refs);
+		return;
+	}
+
+    // context = SDLActivity.getContext(); 
+    mid = (*mEnv)->GetStaticMethodID(mEnv, mActivityClass,
+            "getContext","()Landroid/content/Context;");
+    context = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, mid);
+
+	jobject adapter = (*mEnv)->CallStaticObjectMethod(mEnv, mActivityClass, midBleInitialize, context);
+	jobject result = (*mEnv)->NewGlobalRef(mEnv, adapter);
+
+    LocalReferenceHolder_Cleanup(&refs);
+	return result;
 }
 
 #endif /* __ANDROID__ */

@@ -29,7 +29,7 @@ static void discoverCharacteristics(SDL_BlePeripheral* peripheral, CBService* se
 {
     int at = 0;
 
-	SDL_BleService* service = discover_characteristics_uh(peripheral, [service2.UUID.UUIDString UTF8String], (int)[service2.characteristics count]);
+	SDL_BleService* service = discover_characteristics_uh(peripheral, SDL_BleFindService(peripheral, [service2.UUID.UUIDString UTF8String]), (int)[service2.characteristics count]);
 	if (!service) {
 		return;
 	}
@@ -298,7 +298,7 @@ static void discoverCharacteristics(SDL_BlePeripheral* peripheral, CBService* se
 - (void)centralManager:(CBCentralManager *)central didDiscoverPeripheral:(CBPeripheral *)peripheral2 advertisementData:(NSDictionary *)advertisementData RSSI:(NSNumber *)RSSI
 {
     const char* name = [peripheral2.name UTF8String];
-	SDL_BlePeripheral* peripheral = discover_peripheral_uh((__bridge void *)(peripheral2), [peripheral2.name UTF8String]);
+	SDL_BlePeripheral* peripheral = discover_peripheral_uh_cookie((__bridge void *)(peripheral2), [peripheral2.name UTF8String]);
 	if (!peripheral->cookie) {
 		peripheral->cookie = (void *)CFBridgingRetain(peripheral2);
 
@@ -356,21 +356,17 @@ static void discoverCharacteristics(SDL_BlePeripheral* peripheral, CBService* se
 
 - (void)centralManager:(CBCentralManager *)central didConnectPeripheral:(CBPeripheral *)peripheral2
 {
-    SDL_BlePeripheral* device = find_peripheral_from_cookie((__bridge void *)(peripheral2));
-    if (current_callbacks && current_callbacks->connect_peripheral) {
-		current_callbacks->connect_peripheral(device, 0);
-	}
+    SDL_BlePeripheral* peripheral = find_peripheral_from_cookie((__bridge void *)(peripheral2));
+	connect_peripheral_bh(peripheral, 0);
 
     [peripheral2 setDelegate:self];
 }
 
 -(void)centralManager:(CBCentralManager *)central didFailToConnectPeripheral:(CBPeripheral *)peripheral2 error:(NSError *)error
 {
-    SDL_BlePeripheral* device = find_peripheral_from_cookie((__bridge void *)(peripheral2));
+    SDL_BlePeripheral* peripheral = find_peripheral_from_cookie((__bridge void *)(peripheral2));
     NSLog(@">>>connect to（%@）fail, readon:%@", [peripheral2 name], [error localizedDescription]);
-	if (current_callbacks && current_callbacks->connect_peripheral) {
-		current_callbacks->connect_peripheral(device, -1 * EFAULT);
-	}
+	connect_peripheral_bh(peripheral, -1 * EFAULT);
 }
 
 - (void)centralManager:(CBCentralManager *)central didDisconnectPeripheral:(CBPeripheral *)peripheral2 error:(NSError *)error
@@ -546,7 +542,7 @@ void UIKit_StartAdvertise()
     }
 }
 
-void UIKit_ConnectPeripheral(const SDL_BlePeripheral* peripheral)
+void UIKit_ConnectPeripheral(SDL_BlePeripheral* peripheral)
 {
 	CBPeripheral *data = (__bridge CBPeripheral *)peripheral->cookie;
 	[ble connectToPeripheral:(CBPeripheral*)data];

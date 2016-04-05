@@ -43,6 +43,7 @@ extern ANativeWindow* Android_JNI_GetNativeWindow(void);
 extern int Android_JNI_OpenAudioDevice(int sampleRate, int is16Bit, int channelCount, int desiredBufferFrames);
 extern void* Android_JNI_GetAudioBuffer(void);
 extern void Android_JNI_WriteAudioBuffer(void);
+extern void Android_XmitAudio(jboolean start);
 extern void Android_JNI_CloseAudioDevice(void);
 
 #include "SDL_rwops.h"
@@ -82,6 +83,12 @@ int Android_JNI_SendMessage(int command, int param);
 
 /* file system support */
 SDL_bool Android_JNI_IsDirectory(const char* dir);
+SDL_bool Android_JNI_IsFile(const char* file);
+
+/* ble support */
+void Android_JNI_BleScanPeripherals(const char* uuid);
+void Android_JNI_BleStopScanPeripherals();
+jobject Android_JNI_BleInitialize();
 
 /* Ends C function definitions when using C++ */
 #ifdef __cplusplus

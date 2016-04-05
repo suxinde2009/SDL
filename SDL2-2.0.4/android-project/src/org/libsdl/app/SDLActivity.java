@@ -9,8 +9,23 @@ import java.util.Comparator;
 import java.util.List;
 import java.lang.reflect.Method;
 
+import android.annotation.TargetApi;
 import android.app.*;
+import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothDevice;
+import android.bluetooth.BluetoothGatt;
+import android.bluetooth.BluetoothGattCallback;
+import android.bluetooth.BluetoothGattCharacteristic;
+import android.bluetooth.BluetoothGattDescriptor;
+import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
+import android.bluetooth.le.BluetoothLeScanner;
+import android.bluetooth.le.ScanCallback;
+import android.bluetooth.le.ScanFilter;
+import android.bluetooth.le.ScanResult;
+import android.bluetooth.le.ScanSettings;
 import android.content.*;
+import android.content.res.AssetManager;
 import android.text.InputType;
 import android.view.*;
 import android.view.inputmethod.BaseInputConnection;
@@ -33,6 +48,7 @@ import android.content.pm.ActivityInfo;
 /**
     SDL Activity
 */
+@TargetApi(21)
 public class SDLActivity extends Activity {
     private static final String TAG = "SDL";
 
@@ -58,7 +74,12 @@ public class SDLActivity extends Activity {
     protected static Thread mSDLThread;
 
     // Audio
-    protected static AudioTrack mAudioTrack;
+    private static PlaybackAudioService mPlaybackAudioService = null;
+
+    // Ble
+    protected static BluetoothManager mBluetoothManager = null;
+    protected static BluetoothAdapter mBluetoothAdapter = null;
+    protected static BluetoothLeScanner mLEScanner;
 
     /**
      * This method is called by SDL before loading the native shared libraries.
@@ -71,10 +92,11 @@ public class SDLActivity extends Activity {
     protected String[] getLibraries() {
         return new String[] {
             "SDL2",
-            // "SDL2_image",
-            // "SDL2_mixer",
-            // "SDL2_net",
-            // "SDL2_ttf",
+            "SDL2_image",
+            "SDL2_mixer",
+            "SDL2_net",
+            "SDL2_ttf",
+            "gnustl_shared",
             "main"
         };
     }
@@ -105,7 +127,6 @@ public class SDLActivity extends Activity {
         mLayout = null;
         mJoystickHandler = null;
         mSDLThread = null;
-        mAudioTrack = null;
         mExitCalledFromJava = false;
         mBrokenLibraries = false;
         mIsPaused = false;
@@ -113,12 +134,229 @@ public class SDLActivity extends Activity {
         mHasFocus = true;
     }
 
+    public static boolean is_asset(Context context, String id) {
+        int idx = id.lastIndexOf('/');
+        if (idx == - 1) {
+            return false;
+        }
+        String dir = id.substring(0, idx);
+        String id2 = id.substring(idx + 1);
+        try {
+            return Arrays.asList(context.getAssets().list(dir)).contains(id2);
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    // return value
+    // 0: asset_type_none
+    // 1: asset_type_directory
+    // 2: asset_type_file
+    public static int get_asset_type(Context context, String id, boolean directory) {
+        AssetManager manager = context.getAssets();
+
+        try {
+            InputStream in = null;
+            if (directory) {
+                String id2 = id + "/__cookie.cki";
+                in = manager.open(id2);
+            } else {
+                in = manager.open(id);
+            }
+            if (in == null) {
+                return 0;
+            }
+
+            in.close();
+            return directory? 1: 2;
+
+        } catch (IOException e) {
+            // e.printStackTrace();
+            // System.err.println(e.getMessage());
+            return 0;
+        }
+    }
+
+    private final ServiceConnection mPlaybackAudioServiceConnection = new ServiceConnection() {
+
+        @Override
+        public void onServiceConnected(ComponentName componentName,IBinder service) {
+            mPlaybackAudioService = ((PlaybackAudioService.LocalBinder) service).getService();
+            Log.i(TAG, "PlaybackAudioService, mPlaybackAudioServiceConnection, onServiceConnected, " + System.currentTimeMillis());
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName componentName) {
+            mPlaybackAudioService = null;
+            Log.i(TAG, "PlaybackAudioService, mPlaybackAudioServiceConnection, onServiceDisconnected, " + System.currentTimeMillis());
+        }
+    };
+
+    public static native void nativeDiscoverPeripheral(BluetoothDevice device, int rssi);
+    public static native void nativeConnectionStateChange(BluetoothGatt gatt, boolean connected);
+    public static native void nativeServicesDiscovered(BluetoothGatt gatt, boolean success);
+    public static native void nativeCharacteristicRead(BluetoothGattCharacteristic chara, byte[] buffer, boolean notify);
+    public static native void nativeCharacteristicWrite(BluetoothGattCharacteristic chara, boolean success);
+    public static native void nativeDescriptorWrite(BluetoothGattDescriptor descriptor);
+
+    // Implements callback methods for GATT events that the app cares about.  For example,
+    // connection change and services discovered.
+    public static BluetoothGattCallback mGattCallback = new BluetoothGattCallback() {
+
+        @Override
+        public void onConnectionStateChange(BluetoothGatt gatt, int status, int newState) {
+            // String address = gatt.getDevice().getAddress();
+            if (newState == BluetoothProfile.STATE_CONNECTED) {
+                Log.i(TAG, "Connected to GATT server.");
+                nativeConnectionStateChange(gatt, true);
+
+            } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
+                Log.i(TAG, "Disconnected from GATT server.");
+                nativeConnectionStateChange(gatt, false);
+            }
+        }
+
+        @Override
+        public void onServicesDiscovered(BluetoothGatt gatt, int status) {
+            Log.i(TAG, "onServiceDiscovered: status: " + status);
+            nativeServicesDiscovered(gatt, status == BluetoothGatt.GATT_SUCCESS);
+        }
+
+        @Override
+        public void onCharacteristicRead(BluetoothGatt gatt,
+                                         BluetoothGattCharacteristic characteristic,
+                                         int status) {
+            // Log.i(TAG, "onCharacteristicRead: uuid " + characteristic.getUuid().toString() + ", status: " + status);
+            nativeCharacteristicRead(characteristic, status == BluetoothGatt.GATT_SUCCESS? characteristic.getValue(): null, false);
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt,
+                                          BluetoothGattCharacteristic characteristic, int status) {
+            // Log.i(TAG, "onCharacteristicWrite: uuid " + characteristic.getUuid().toString() + ", status: " + status);
+            nativeCharacteristicWrite(characteristic, status == BluetoothGatt.GATT_SUCCESS);
+        }
+
+        @Override
+        public void onCharacteristicChanged(BluetoothGatt gatt,
+                                            BluetoothGattCharacteristic characteristic) {
+            // Log.i(TAG, "onCharacteristicChanged: uuid " + characteristic.getUuid().toString());
+            nativeCharacteristicRead(characteristic, characteristic.getValue(), true);
+        }
+
+        @Override
+        public void onDescriptorRead(BluetoothGatt gatt, BluetoothGattDescriptor descriptor,
+                                     int status) {
+            Log.i(TAG, "onDescriptorRead: uuid " + descriptor.getUuid().toString() + ", status: " + status);
+        }
+
+        @Override
+        public void onDescriptorWrite(BluetoothGatt gatt, BluetoothGattDescriptor descriptor,
+                                      int status) {
+            Log.i(TAG, "onDescriptorWrite: uuid " + descriptor.getUuid().toString() + ", status: " + status);
+            nativeDescriptorWrite(descriptor);
+        }
+   };
+
+    // Device scan callback.
+    private static ScanCallback mScanCallback = null;
+
+    private static BluetoothAdapter.LeScanCallback mLeScanCallback =
+            new BluetoothAdapter.LeScanCallback() {
+
+                @Override
+                public void onLeScan(final BluetoothDevice device, final int rssi, byte[] scanRecord) {
+                    // it isn't in main thread. to safe, should switch to main
+                    // Log.i(TAG, "address: " + device.getAddress() + " name: " + device.getName());
+                    nativeDiscoverPeripheral(device, rssi);
+                }
+            };
+
+    public static BluetoothAdapter bleInitialize(Context context)
+    {
+        mBluetoothManager = (BluetoothManager) context.getSystemService(Context.BLUETOOTH_SERVICE);
+        if (mBluetoothManager == null) {
+            Log.e(TAG, "Unable to initialize BluetoothManager.");
+            return null;
+        } else {
+            mBluetoothAdapter = mBluetoothManager.getAdapter();
+        }
+
+        if (mBluetoothAdapter == null) {
+            Log.e(TAG, "Unable to obtain a BluetoothAdapter.");
+            return null;
+        }
+
+        if (!mBluetoothAdapter.isEnabled()) {
+            Log.e(TAG, "Current don't enable bluetooth, try to enable...");
+            boolean success = mBluetoothAdapter.enable();
+            Log.e(TAG, "Enable bluetooth adapter, result: " + (success ? "true" : "false"));
+            if (!success) {
+                return null;
+            }
+        }
+
+        if (Build.VERSION.SDK_INT >= 21) {
+            mLEScanner = mBluetoothAdapter.getBluetoothLeScanner();
+
+            mScanCallback = new ScanCallback() {
+                @Override
+                public void onScanResult(int callbackType, ScanResult result) {
+                    Log.i("callbackType", String.valueOf(callbackType));
+                    Log.i("result", result.toString());
+                    BluetoothDevice device = result.getDevice();
+                    nativeDiscoverPeripheral(device, result.getRssi());
+                }
+
+                @Override
+                public void onBatchScanResults(List<ScanResult> results) {
+                    for (ScanResult sr : results) {
+                        Log.i("ScanResult - Results", sr.toString());
+                    }
+                }
+
+                @Override
+                public void onScanFailed(int errorCode) {
+                    Log.e("Scan Failed", "Error Code: " + errorCode);
+                }
+            };
+        }
+
+        Log.e(TAG, "Initialize BluetoothAdapter success.");
+        return mBluetoothAdapter;
+    }
+
+    public static void bleScanPeripherals(Context context, String uuid)
+    {
+        Log.e(TAG, "Trying to bleScanPeripherals, uuid: " + uuid);
+        if (Build.VERSION.SDK_INT < 21) {
+            mBluetoothAdapter.startLeScan(mLeScanCallback);
+        } else {
+            ScanSettings settings = new ScanSettings.Builder().setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY).build();
+            List<ScanFilter> filters = new ArrayList<ScanFilter>();
+            mLEScanner.startScan(filters, settings, mScanCallback);
+        }
+
+        Log.e(TAG, "Trying to bleScanPeripherals, Device API-" + Build.VERSION.SDK_INT);
+    }
+
+    public static void bleStopScanPeripherals(Context context)
+    {
+        Log.e(TAG, "Trying to bleStopScanPeripherals");
+        if (Build.VERSION.SDK_INT < 21) {
+            mBluetoothAdapter.stopLeScan(mLeScanCallback);
+        } else {
+            mLEScanner.stopScan(mScanCallback);
+        }
+    }
+
     // Setup
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         Log.v(TAG, "Device: " + android.os.Build.DEVICE);
         Log.v(TAG, "Model: " + android.os.Build.MODEL);
-        Log.v(TAG, "onCreate(): " + mSingleton);
+        Log.i(TAG, "onCreate(): " + mSingleton);
         super.onCreate(savedInstanceState);
 
         SDLActivity.initialize();
@@ -186,12 +424,16 @@ public class SDLActivity extends Activity {
                 SDLActivity.onNativeDropFile(filename);
             }
         }
+
+        Intent playbackAudioServiceIntent = new Intent(getApplicationContext(), PlaybackAudioService.class);
+        bindService(playbackAudioServiceIntent, mPlaybackAudioServiceConnection, BIND_AUTO_CREATE);
+        startService(playbackAudioServiceIntent);
     }
 
     // Events
     @Override
     protected void onPause() {
-        Log.v(TAG, "onPause()");
+        Log.i(TAG, "onPause()");
         super.onPause();
 
         if (SDLActivity.mBrokenLibraries) {
@@ -203,7 +445,7 @@ public class SDLActivity extends Activity {
 
     @Override
     protected void onResume() {
-        Log.v(TAG, "onResume()");
+        Log.i(TAG, "onResume()");
         super.onResume();
 
         if (SDLActivity.mBrokenLibraries) {
@@ -243,7 +485,7 @@ public class SDLActivity extends Activity {
 
     @Override
     protected void onDestroy() {
-        Log.v(TAG, "onDestroy()");
+        Log.i(TAG, "onDestroy()");
 
         if (SDLActivity.mBrokenLibraries) {
            super.onDestroy();
@@ -266,6 +508,11 @@ public class SDLActivity extends Activity {
             SDLActivity.mSDLThread = null;
 
             //Log.v(TAG, "Finished waiting for SDL thread");
+        }
+
+        if (mPlaybackAudioService != null) {
+            unbindService(mPlaybackAudioServiceConnection);
+            mPlaybackAudioService = null;
         }
 
         super.onDestroy();
@@ -299,6 +546,11 @@ public class SDLActivity extends Activity {
      */
     public static void handlePause() {
         if (!SDLActivity.mIsPaused && SDLActivity.mIsSurfaceReady) {
+            Log.i(TAG, "handlePause");
+
+            // mSingleton.unbindService(mSingleton.mPlaybackAudioServiceConnection);
+            // mSingleton.mPlaybackAudioService = null;
+
             SDLActivity.mIsPaused = true;
             SDLActivity.nativePause();
             mSurface.handlePause();
@@ -311,9 +563,17 @@ public class SDLActivity extends Activity {
      */
     public static void handleResume() {
         if (SDLActivity.mIsPaused && SDLActivity.mIsSurfaceReady && SDLActivity.mHasFocus) {
+            Log.i(TAG, "handleResume");
             SDLActivity.mIsPaused = false;
             SDLActivity.nativeResume();
             mSurface.handleResume();
+
+            // if (mSingleton.mPlaybackAudioService == null) {
+            //    Intent playbackAudioServiceIntent = new Intent(mSingleton.getApplicationContext(), PlaybackAudioService.class);
+            //    mSingleton.bindService(playbackAudioServiceIntent, mSingleton.mPlaybackAudioServiceConnection, BIND_AUTO_CREATE);
+            //    mSingleton.startService(playbackAudioServiceIntent);
+            // }
+
         }
     }
 
@@ -544,89 +804,21 @@ public class SDLActivity extends Activity {
      * This method is called by SDL using JNI.
      */
     public static int audioInit(int sampleRate, boolean is16Bit, boolean isStereo, int desiredFrames) {
-        int channelConfig = isStereo ? AudioFormat.CHANNEL_CONFIGURATION_STEREO : AudioFormat.CHANNEL_CONFIGURATION_MONO;
-        int audioFormat = is16Bit ? AudioFormat.ENCODING_PCM_16BIT : AudioFormat.ENCODING_PCM_8BIT;
-        int frameSize = (isStereo ? 2 : 1) * (is16Bit ? 2 : 1);
-
-        Log.v(TAG, "SDL audio: wanted " + (isStereo ? "stereo" : "mono") + " " + (is16Bit ? "16-bit" : "8-bit") + " " + (sampleRate / 1000f) + "kHz, " + desiredFrames + " frames buffer");
-
-        // Let the user pick a larger buffer if they really want -- but ye
-        // gods they probably shouldn't, the minimums are horrifyingly high
-        // latency already
-        desiredFrames = Math.max(desiredFrames, (AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat) + frameSize - 1) / frameSize);
-
-        if (mAudioTrack == null) {
-            mAudioTrack = new AudioTrack(AudioManager.STREAM_MUSIC, sampleRate,
-                    channelConfig, audioFormat, desiredFrames * frameSize, AudioTrack.MODE_STREAM);
-
-            // Instantiating AudioTrack can "succeed" without an exception and the track may still be invalid
-            // Ref: https://android.googlesource.com/platform/frameworks/base/+/refs/heads/master/media/java/android/media/AudioTrack.java
-            // Ref: http://developer.android.com/reference/android/media/AudioTrack.html#getState()
-
-            if (mAudioTrack.getState() != AudioTrack.STATE_INITIALIZED) {
-                Log.e(TAG, "Failed during initialization of Audio Track");
-                mAudioTrack = null;
-                return -1;
-            }
-
-            mAudioTrack.play();
-        }
-
-        Log.v(TAG, "SDL audio: got " + ((mAudioTrack.getChannelCount() >= 2) ? "stereo" : "mono") + " " + ((mAudioTrack.getAudioFormat() == AudioFormat.ENCODING_PCM_16BIT) ? "16-bit" : "8-bit") + " " + (mAudioTrack.getSampleRate() / 1000f) + "kHz, " + desiredFrames + " frames buffer");
-
-        return 0;
+        return mPlaybackAudioService.audioInit(sampleRate, is16Bit, isStereo, desiredFrames);
     }
 
     /**
      * This method is called by SDL using JNI.
      */
-    public static void audioWriteShortBuffer(short[] buffer) {
-        for (int i = 0; i < buffer.length; ) {
-            int result = mAudioTrack.write(buffer, i, buffer.length - i);
-            if (result > 0) {
-                i += result;
-            } else if (result == 0) {
-                try {
-                    Thread.sleep(1);
-                } catch(InterruptedException e) {
-                    // Nom nom
-                }
-            } else {
-                Log.w(TAG, "SDL audio: error return from write(short)");
-                return;
-            }
-        }
-    }
-
-    /**
-     * This method is called by SDL using JNI.
-     */
-    public static void audioWriteByteBuffer(byte[] buffer) {
-        for (int i = 0; i < buffer.length; ) {
-            int result = mAudioTrack.write(buffer, i, buffer.length - i);
-            if (result > 0) {
-                i += result;
-            } else if (result == 0) {
-                try {
-                    Thread.sleep(1);
-                } catch(InterruptedException e) {
-                    // Nom nom
-                }
-            } else {
-                Log.w(TAG, "SDL audio: error return from write(byte)");
-                return;
-            }
-        }
+    public static void audioXmit(boolean start) {
+        mPlaybackAudioService.audioXmit(start);
     }
 
     /**
      * This method is called by SDL using JNI.
      */
     public static void audioQuit() {
-        if (mAudioTrack != null) {
-            mAudioTrack.stop();
-            mAudioTrack = null;
-        }
+        mPlaybackAudioService.audioQuit();
     }
 
     // Input

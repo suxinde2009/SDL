@@ -379,8 +379,6 @@ device_unplugged(AudioObjectID devid, UInt32 num_addr, const AudioObjectProperty
 #endif
 
 #if !MACOSX_COREAUDIO
-static SDL_AudioDevice* this_clone = NULL;
-static SDL_bool playback_started = SDL_FALSE;
 SDL_bool mixable_audio = SDL_TRUE;
 
 extern void UIKit_SetPlaybackCategory(SDL_bool mixable);
@@ -390,15 +388,10 @@ void UIKit_MixableAudio(SDL_bool mixable)
 	mixable_audio = mixable;
 }
 
-void UIKit_PlaybackAudio(SDL_bool play)
+static void
+COREAUDIO_XmitData(_THIS, int start)
 {
-	if (!this_clone || play == playback_started) {
-		return;
-	}
-	SDL_AudioDevice* this = this_clone;
-
-	// SDL_LockMutex(this->mixer_lock);
-	if (play) {
+	if (start) {
 		OSStatus result = AudioOutputUnitStart(this->hidden->audioUnit);
 		if (result != noErr) {
 			SDL_SetError("CoreAudio error, AudioOutputUnitStart: %d", (int)result);
@@ -407,9 +400,6 @@ void UIKit_PlaybackAudio(SDL_bool play)
 		// stop processing the audio unit
 		AudioOutputUnitStop(this->hidden->audioUnit);
 	}
-	// SDL_UnlockMutex(this->mixer_lock);
-
-	playback_started = play;
 }
 #endif
 
@@ -437,7 +427,7 @@ COREAUDIO_CloseDevice(_THIS)
 #if MACOSX_COREAUDIO
             AudioOutputUnitStop(this->hidden->audioUnit);
 #else
-			UIKit_PlaybackAudio(SDL_FALSE);
+			COREAUDIO_XmitData(this, 0);
 #endif
 
             /* Remove the input callback */
@@ -457,8 +447,6 @@ COREAUDIO_CloseDevice(_THIS)
         SDL_free(this->hidden->buffer);
         SDL_free(this->hidden);
         this->hidden = NULL;
-        
-        this_clone = NULL;
     }
 }
 
@@ -692,7 +680,6 @@ COREAUDIO_OpenDevice(_THIS, void *handle, const char *devname, int iscapture)
         return -1;      /* prepare_audiounit() will call SDL_SetError()... */
     }
 
-    this_clone = this;
     return 0;   /* good to go. */
 }
 
@@ -718,6 +705,7 @@ COREAUDIO_Init(SDL_AudioDriverImpl * impl)
     impl->DetectDevices = COREAUDIO_DetectDevices;
     AudioObjectAddPropertyListener(kAudioObjectSystemObject, &devlist_address, device_list_changed, NULL);
 #else
+	impl->XmitData = COREAUDIO_XmitData;
     impl->OnlyHasDefaultOutputDevice = 1;
 
     /* Set category to ambient sound so that other music continues playing.

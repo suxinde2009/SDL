@@ -29,6 +29,7 @@
 #include "SDL_androidaudio.h"
 
 #include "../../core/android/SDL_android.h"
+#include "SDL_hints.h"
 
 #include <android/log.h>
 
@@ -123,6 +124,85 @@ AndroidAUD_CloseDevice(_THIS)
     }
 }
 
+#ifdef ANDROID
+#include <android/log.h>
+#define posix_print(format, ...) __android_log_print(ANDROID_LOG_INFO, "SDL", format, ##__VA_ARGS__)
+#elif defined(__APPLE__) // mac os x/ios
+#define posix_print(format, ...) fprintf(stderr, format, ##__VA_ARGS__) 
+#else
+#define posix_print(format, ...)
+#endif
+
+static int require_xmit = 0;
+
+static jboolean nativeFillAudio(JNIEnv* env, jarray buffer, SDL_bool is16Bit)
+{
+    SDL_AudioDevice* this = audioDevice;
+
+	if (!require_xmit) {
+		return JNI_FALSE;
+	}
+
+	// here, I want to reduce copy, but fail! Hope someone can do it.
+	// jboolean isCopy = JNI_FALSE;
+    // void* bufferPinned = (*env)->GetShortArrayElements(env, buffer, &isCopy);
+	void* bufferPinned;
+	int length;
+	
+	if (is16Bit) {
+		bufferPinned = (*env)->GetShortArrayElements(env, (jshortArray)buffer, NULL);
+		length = (*env)->GetArrayLength(env, (jshortArray)buffer) * 2;
+	} else {
+		bufferPinned = (*env)->GetByteArrayElements(env, (jbyteArray)buffer, NULL);
+		length = (*env)->GetArrayLength(env, (jbyteArray)buffer);
+	}
+
+    /* Only do anything if audio is enabled and not paused */
+    if (this->enabled && !this->paused) {
+		static Uint32 last_ticks = 0;
+		Uint32 now_ticks = SDL_GetTicks();
+		if (now_ticks - last_ticks >= 5000) {
+			posix_print("nativeFillAudio, 1, bufferPinned: %p, length: %i, enabled: %s, paused: %s\n", bufferPinned, length, this->enabled? "true": "false", this->paused? "true": "false");
+			last_ticks = now_ticks;
+		}
+		// Generate the data
+		SDL_LockMutex(this->mixer_lock);
+		(*this->spec.callback)(this->spec.userdata, bufferPinned, length);
+		SDL_UnlockMutex(this->mixer_lock);
+
+    } else {
+		posix_print("nativeFillAudio, 2, bufferPinned: %p, length: %i, enabled: %s, paused: %s\n", bufferPinned, length, this->enabled? "true": "false", this->paused? "true": "false");
+		SDL_memset(bufferPinned, this->spec.silence, length);
+	}
+
+	(*env)->ReleaseByteArrayElements(env, buffer, bufferPinned, 0);
+	(*env)->DeleteLocalRef(env, buffer);
+
+	return JNI_TRUE;
+}
+
+/* The Audio callback */
+JNIEXPORT jboolean JNICALL Java_org_libsdl_app_PlaybackAudioService_nativeFillByteAudio(JNIEnv* env, jclass jcls, jarray buffer)
+{
+	return nativeFillAudio(env, buffer, SDL_FALSE);
+}
+
+JNIEXPORT jboolean JNICALL Java_org_libsdl_app_PlaybackAudioService_nativeFillShortAudio(JNIEnv* env, jclass jcls, jarray buffer)
+{
+	return nativeFillAudio(env, buffer, SDL_TRUE);
+}
+
+static void AndroidAUD_XmitData(_THIS, int start)
+{
+	// if start = 0, it is called in nativeFillAudio, and is called by JavaVM.
+	// Android_XmitAudio will call JavaVM, Combine these two will result in JavaVM nesting.
+	// In order to avoid to nest, stop use 
+	if (start) {
+		Android_XmitAudio(JNI_TRUE);
+	}
+	require_xmit = start;
+}
+
 static int
 AndroidAUD_Init(SDL_AudioDriverImpl * impl)
 {
@@ -130,12 +210,15 @@ AndroidAUD_Init(SDL_AudioDriverImpl * impl)
     impl->OpenDevice = AndroidAUD_OpenDevice;
     impl->PlayDevice = AndroidAUD_PlayDevice;
     impl->GetDeviceBuf = AndroidAUD_GetDeviceBuf;
+	impl->XmitData = AndroidAUD_XmitData;
     impl->CloseDevice = AndroidAUD_CloseDevice;
 
     /* and the capabilities */
     impl->HasCaptureSupport = 0; /* TODO */
     impl->OnlyHasDefaultOutputDevice = 1;
     impl->OnlyHasDefaultInputDevice = 1;
+
+	impl->ProvidesOwnCallbackThread = 1;
 
     return 1;   /* this audio target is available. */
 }
@@ -148,6 +231,8 @@ AudioBootStrap ANDROIDAUD_bootstrap = {
 void AndroidAUD_PauseDevices(void)
 {
     /* TODO: Handle multiple devices? */
+	const char* hint = SDL_GetHint(SDL_HINT_BACKGROUND_AUDIO);
+
     struct SDL_PrivateAudioData *private;
     if(audioDevice != NULL && audioDevice->hidden != NULL) {
         private = (struct SDL_PrivateAudioData *) audioDevice->hidden;
@@ -155,7 +240,7 @@ void AndroidAUD_PauseDevices(void)
             /* The device is already paused, leave it alone */
             private->resume = SDL_FALSE;
         }
-        else {
+        else if (hint && hint[0] == '0') {
             SDL_LockMutex(audioDevice->mixer_lock);
             audioDevice->paused = SDL_TRUE;
             private->resume = SDL_TRUE;

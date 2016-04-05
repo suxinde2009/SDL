@@ -212,6 +212,8 @@ extern DECLSPEC void SDLCALL Mix_HookMusic(void (*mix_func)(void *udata, Uint8 *
  */
 extern DECLSPEC void SDLCALL Mix_HookMusicFinished(void (*music_finished)(void));
 
+extern DECLSPEC void SDLCALL Mix_HookMusicPlaying(void (*music_playing)(int played, int filled));
+
 /* Get a pointer to the user data for the current music hook */
 extern DECLSPEC void * SDLCALL Mix_GetMusicHookData(void);
 
@@ -614,6 +616,9 @@ extern DECLSPEC int SDLCALL Mix_EachSoundFont(int (*function)(const char*, void*
     Returns NULL if it's an invalid channel, or there's no chunk associated.
 */
 extern DECLSPEC Mix_Chunk * SDLCALL Mix_GetChunk(int channel);
+
+extern DECLSPEC void SDLCALL Mix_EnablePersistXmit(int enable);
+extern DECLSPEC int SDLCALL Mix_GetPersistXmit();
 
 /* Close the mixer, halting all playing audio */
 extern DECLSPEC void SDLCALL Mix_CloseAudio(void);

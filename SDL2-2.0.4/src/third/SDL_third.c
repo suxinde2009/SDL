@@ -63,8 +63,6 @@ void SDL_ThirdInit()
 
 void SDL_ThirdQuit()
 {
-	// release_peripherals();
-
 	SDL_free(_this);
 	_this = NULL;
 }

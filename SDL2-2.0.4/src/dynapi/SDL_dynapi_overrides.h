@@ -89,6 +89,7 @@
 #define SDL_GetAudioDeviceStatus SDL_GetAudioDeviceStatus_REAL
 #define SDL_PauseAudio SDL_PauseAudio_REAL
 #define SDL_PauseAudioDevice SDL_PauseAudioDevice_REAL
+#define SDL_XmitAudio SDL_XmitAudio_REAL
 #define SDL_LoadWAV_RW SDL_LoadWAV_RW_REAL
 #define SDL_FreeWAV SDL_FreeWAV_REAL
 #define SDL_BuildAudioCVT SDL_BuildAudioCVT_REAL
@@ -618,3 +619,4 @@
 #define SDL_BleSetNotify SDL_BleSetNotify_REAL
 #define SDL_BleDiscoverDescriptors SDL_BleDiscoverDescriptors_REAL
 #define SDL_BleAuthorizationStatus SDL_BleAuthorizationStatus_REAL
+#define SDL_BleUuidEqual SDL_BleUuidEqual_REAL

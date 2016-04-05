@@ -22,15 +22,15 @@
 #include "../SDL_internal.h"
 #include "SDL_peripheral.h"
 
-#ifndef _SDL_blit_c_h
-#define _SDL_blit_c_h
+#ifndef _SDL_ble_c_h
+#define _SDL_ble_c_h
 
 typedef struct 
 {
 	void (*ScanPeripherals) (const char* uuid);
 	void (*StopScanPeripherals) ();
 	void (*StartAdvertise) ();
-	void (*ConnectPeripheral) (const SDL_BlePeripheral* peripheral);
+	void (*ConnectPeripheral) (SDL_BlePeripheral* peripheral);
 	void (*DisconnectPeripheral) (const SDL_BlePeripheral* peripheral);
 	void (*GetServices) (const SDL_BlePeripheral* peripheral);
 	void (*GetCharacteristics) (const SDL_BlePeripheral* peripheral, SDL_BleService* service);
@@ -41,22 +41,34 @@ typedef struct
 	int (*AuthorizationStatus) ();
 	int (*IsConnected) (const SDL_BlePeripheral* peripheral);
 	void (*ReleaseCookie) (const SDL_BlePeripheral* peripheral);
+	void (*ReleaseCharacteristicCookie) (const SDL_BleCharacteristic* characteristic);
+	void (*Quit) ();
 } SDL_MiniBle;
 
 extern SDL_BleCallbacks* current_callbacks;
+extern SDL_BlePeripheral* connected_peripheral;
+
+#define mac_addr_equal(addr1, addr2)	(!SDL_memcmp(addr1, addr2, SDL_BLE_MAC_ADDR_BYTES))
+void mac_addr_str_2_uc6(const char* str, uint8_t* uc6, const char separator);
+char* mac_addr_uc6_2_str(const uint8_t* uc6, const char separator);
+SDL_bool mac_addr_valid(const uint8_t* addr);
+void get_full_uuid2(const char* uuid, char* result);
 
 SDL_BlePeripheral* find_peripheral_from_cookie(const void* cookie);
+SDL_BlePeripheral* find_peripheral_from_macaddr(const uint8_t* mac_addr);
 SDL_BleCharacteristic* find_characteristic_from_cookie(const SDL_BlePeripheral* peripheral, const void* cookie);
-SDL_BlePeripheral* discover_peripheral_uh(const void* cookie, const char* name);
+SDL_BleCharacteristic* find_characteristic_from_uuid(const SDL_BlePeripheral* peripheral, const char* service_uuid, const char* chara_uuid);
+SDL_BlePeripheral* discover_peripheral_uh_cookie(const void* cookie, const char* name);
+SDL_BlePeripheral* discover_peripheral_uh_macaddr(const uint8_t* mac_addr, const char* name);
 void discover_peripheral_bh(SDL_BlePeripheral* peripheral, int rssi);
+void connect_peripheral_bh(SDL_BlePeripheral* peripheral, int error);
 void disconnect_peripheral_bh(SDL_BlePeripheral* peripheral, int error);
 
 void discover_services_uh(SDL_BlePeripheral* peripheral, int services);
 void discover_services_bh(SDL_BlePeripheral* peripheral, SDL_BleService* service, const char* uuid, void* cookie);
-SDL_BleService* discover_characteristics_uh(SDL_BlePeripheral* peripheral, const char* service_uuid, int characteristics);
+SDL_BleService* discover_characteristics_uh(SDL_BlePeripheral* peripheral, SDL_BleService* service, int characteristics);
 void discover_characteristics_bh(SDL_BlePeripheral* peripheral, SDL_BleService* service, SDL_BleCharacteristic* characteristic, const char* uuid, void* cookie);
 
-void free_characteristics(SDL_BleService* service);
 void release_peripherals();
 
 typedef struct

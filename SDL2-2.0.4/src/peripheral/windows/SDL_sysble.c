@@ -6,7 +6,7 @@ void WIN_ScanPeripherals(const char* uuid)
 
 	const char* name = NULL;
 	void* cookie = (void*)0x1000;
-	SDL_BlePeripheral* peripheral = discover_peripheral_uh(cookie, name);
+	SDL_BlePeripheral* peripheral = discover_peripheral_uh_cookie(cookie, name);
 	if (!peripheral->cookie) {
 		peripheral->cookie = cookie;
 		peripheral->mac_addr[0] = 0x12;
@@ -23,7 +23,7 @@ void WIN_ScanPeripherals(const char* uuid)
 
 	name = "Thermometer";
 	cookie = (void*)0x1001;
-	peripheral = discover_peripheral_uh(cookie, name);
+	peripheral = discover_peripheral_uh_cookie(cookie, name);
 	if (!peripheral->cookie) {
 		peripheral->cookie = cookie;
 		peripheral->mac_addr[0] = 0x12;
@@ -40,7 +40,7 @@ void WIN_ScanPeripherals(const char* uuid)
 
 	name = "Sesame_HTS";
 	cookie = (void*)0x1002;
-	peripheral = discover_peripheral_uh(cookie, name);
+	peripheral = discover_peripheral_uh_cookie(cookie, name);
 	if (!peripheral->cookie) {
 		peripheral->cookie = cookie;
 		peripheral->mac_addr[0] = 0x12;
@@ -57,7 +57,7 @@ void WIN_ScanPeripherals(const char* uuid)
 
 	name = "Three";
 	cookie = (void*)0x1003;
-	peripheral = discover_peripheral_uh(cookie, name);
+	peripheral = discover_peripheral_uh_cookie(cookie, name);
 	if (!peripheral->cookie) {
 		peripheral->cookie = cookie;
 		peripheral->mac_addr[0] = 0x12;
